@@ -10,7 +10,8 @@ while True:
         data={
             "grant_type": "password",
             "username": "myusername",
-            "password": "mypassword"
+            "password": "mypassword",
+            "scope_demo": "developer"  # for testing only ('client'|'developer')
         }
     )
     login_data = login_rsp.json()
@@ -27,7 +28,8 @@ while True:
         input()
         print("[INFO] Try getting secured data")
         api_rsp = requests.get(
-            "http://localhost:8080/api/hello",
+            "http://localhost:8080/developer",
+            # "http://localhost:8080/api/hello",
             headers={
                 "Authorization": f"{token_type} {access_token}"
             }

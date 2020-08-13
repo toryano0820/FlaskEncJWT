@@ -46,13 +46,14 @@ class AESCipher:
         return s[:-ord(s[len(s) - 1:])]
 
 
+TOKEN_TYPE = "Bearer"
+ACCESS_EXPIRE = int(os.environ.get("_ACCESS_EXPIRE", 1800))  # 1800 seconds = 30 minutes
+REFRESH_EXPIRE = int(os.environ.get("_REFRESH_EXPIRE", 1210000))  # 1210000 seconds  = 14 days
+
 __app = Blueprint("auth_service", __name__)
 __app.secret_key = os.environ.get("_APP_KEY", "thisismysecretkey")
-__access_expire = int(os.environ.get("_ACCESS_EXPIRE", 1800))  # 1800 seconds = 30 minutes
-__refresh_expire = int(os.environ.get("_REFRESH_EXPIRE", 1210000))  # 1210000 seconds  = 14 days
 __aes_cipher = AESCipher(__app.secret_key)
-__token_type = "Bearer"
-__secured_endpoint_match = []
+__secured_endpoint_match = {}
 __auth_func = None
 
 
@@ -85,7 +86,7 @@ def __auth_token():
         payload = dict(request.values)
 
         try:
-            authenticated = __auth_func(**payload)
+            scope = __auth_func(**payload)
         except KeyError:
             return jsonify({
                 "error": "parameter_absent"
@@ -94,14 +95,14 @@ def __auth_token():
         del payload["password"]
         del payload["grant_type"]
 
-        if authenticated:
-            access_token = __generate_token(__access_expire, grant_type="access_token", **payload)
-            refresh_token = __generate_token(__refresh_expire, grant_type="refresh_token", **payload)
+        if type(scope) is str:
+            access_token = __generate_token(ACCESS_EXPIRE, grant_type="access_token", scope=scope, **payload)
+            refresh_token = __generate_token(REFRESH_EXPIRE, grant_type="refresh_token", scope=scope, **payload)
 
             return jsonify({
-                "token_type": __token_type,
+                "token_type": TOKEN_TYPE,
                 "access_token": access_token,
-                "expires_in": __access_expire,
+                "expires_in": ACCESS_EXPIRE,
                 "refresh_token": refresh_token
             }), 200
         else:
@@ -112,28 +113,23 @@ def __auth_token():
     elif grant_type == "refresh_token":
         try:
             try:
-                refresh_token = __aes_cipher.decrypt(request.values["refresh_token"])
+                payload = get_token_payload(request.values["refresh_token"])
             except KeyError:
                 return jsonify({
                     "error": "parameter_absent"
                 }), 400
-
-            payload = jwt.decode(
-                jwt=refresh_token,
-                key=__app.secret_key
-            )
 
             if payload["grant_type"] != "refresh_token":
                 raise KeyError()
 
             del payload["grant_type"]
 
-            access_token = __generate_token(__access_expire, grant_type="access_token", **payload)
+            access_token = __generate_token(ACCESS_EXPIRE, grant_type="access_token", **payload)
 
             return jsonify({
-                "token_type": __token_type,
+                "token_type": TOKEN_TYPE,
                 "access_token": access_token,
-                "expires_in": __access_expire
+                "expires_in": ACCESS_EXPIRE
             }), 200
 
         except (binascii.Error, KeyError, UnicodeDecodeError):
@@ -159,49 +155,42 @@ def __auth_token():
 
 # @__app.route("/oauth/parse_token")
 # def api_token():
-#     token = request.values["token"]
-#     token = __aes_cipher.decrypt(token)
-#     payload = jwt.decode(
-#         jwt=token,
-#         key=__app.secret_key
-#     )
+#     payload = get_token_payload(request.values["token"])
 #     return jsonify(payload), 200
 
 
 @__app.before_app_request
 def __access_validator():
-    if __secured_endpoint_match and re.match(__secured_endpoint_match, request.path):
+    if __secured_endpoint_match and re.match("|".join(__secured_endpoint_match.values()), request.path):
         authorized = False
         if "Authorization" in request.headers:
-            auth_header = request.headers["Authorization"]
-            if auth_header.startswith(__token_type + " "):
-                try:
-                    access_token = __aes_cipher.decrypt(auth_header[len(__token_type) + 1:])
+            try:
+                payload = get_token_payload()
 
-                    payload = jwt.decode(
-                        jwt=access_token,
-                        key=__app.secret_key
-                    )
+                if payload["grant_type"] != "access_token":
+                    raise KeyError()
 
-                    if payload["grant_type"] != "access_token":
-                        raise KeyError()
-
-                    authorized = True
-                except (binascii.Error, KeyError, UnicodeDecodeError):
+                if payload["scope"] not in __secured_endpoint_match or not re.match(__secured_endpoint_match[payload["scope"]], request.path):
                     return jsonify({
-                        "error": "invalid_token"
-                    }), 401
+                        "error": "invalid_scope"
+                    }), 403
 
-                except jwt.exceptions.ExpiredSignatureError:
-                    return jsonify({
-                        "error": "token_expired"
-                    }), 401
+                authorized = True
+            except (binascii.Error, KeyError, UnicodeDecodeError):
+                return jsonify({
+                    "error": "invalid_token"
+                }), 401
 
-                except Exception as ex:
-                    traceback.print_exc()
-                    return jsonify({
-                        "error": str(ex).split(":")[0]
-                    }), 500
+            except jwt.exceptions.ExpiredSignatureError:
+                return jsonify({
+                    "error": "token_expired"
+                }), 401
+
+            except Exception as ex:
+                traceback.print_exc()
+                return jsonify({
+                    "error": str(ex).split(":")[0]
+                }), 500
 
         if not authorized:
             return jsonify({
@@ -209,18 +198,36 @@ def __access_validator():
             }), 400
 
 
-def setup(flask_app, login_func, endpoint_patterns=[]):
+def get_token_payload(token=None):
+    """Get payload dict from token
+
+    Args:
+    token (:obj:`str`, optional): Token string, will use Authorization header token if none given.
+
+    Returns:
+    dict: Payload passed on login.
+    """
+
+    if token is None:
+        token = request.headers["Authorization"][len(TOKEN_TYPE) + 1:]
+
+    return jwt.decode(
+        jwt=__aes_cipher.decrypt(token),
+        key=__app.secret_key
+    )
+
+
+def setup(flask_app, login_func, endpoint_patterns={}):
     """Integrates this auth plugin into existing Flask instance
 
-    Parameters:
-
+    Args:
     flask_app (`Flask`): Flask app to integrate this plugin
+    login_func (`callable`): Function where login params are passed, must return scope `str` on success or `None` on login failure
 
-    login_func (`callable`): Function where login params are passed, must return `bool`
-
-    endpoint_patterns (`list[str]`): RegEx patterns for secured endpoint
+    endpoint_patterns (`dict[str, list[str]]`): Scope dict with list of RegEx patterns for secured endpoint
    """
-    global __secured_endpoint_match, __auth_func
+    global __auth_func
     __auth_func = login_func
-    __secured_endpoint_match = "|".join(__secured_endpoint_match + endpoint_patterns)
+    for scope in endpoint_patterns:
+        __secured_endpoint_match[scope] = "|".join(endpoint_patterns[scope])
     flask_app.register_blueprint(__app)
