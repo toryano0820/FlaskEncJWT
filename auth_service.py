@@ -79,7 +79,7 @@ def __auth_token():
         grant_type = request.values["grant_type"]
     except KeyError:
         return jsonify({
-            "error": "parameter_absent"
+            "error": "invalid_request"
         }), 400
 
     if grant_type == "password":
@@ -89,7 +89,7 @@ def __auth_token():
             scope = __auth_func(**payload)
         except KeyError:
             return jsonify({
-                "error": "parameter_absent"
+                "error": "invalid_request"
             }), 400
 
         del payload["password"]
@@ -100,15 +100,16 @@ def __auth_token():
             refresh_token = __generate_token(REFRESH_EXPIRE, grant_type="refresh_token", scope=scope, **payload)
 
             return jsonify({
-                "token_type": TOKEN_TYPE,
                 "access_token": access_token,
+                "token_type": TOKEN_TYPE,
                 "expires_in": ACCESS_EXPIRE,
-                "refresh_token": refresh_token
+                "refresh_token": refresh_token,
+                "scope": scope
             }), 200
         else:
             return jsonify({
                 "error": "invalid_client"
-            }), 400
+            }), 401
 
     elif grant_type == "refresh_token":
         try:
@@ -116,11 +117,13 @@ def __auth_token():
                 payload = get_token_payload(request.values["refresh_token"])
             except KeyError:
                 return jsonify({
-                    "error": "parameter_absent"
+                    "error": "invalid_request"
                 }), 400
 
             if payload["grant_type"] != "refresh_token":
-                raise KeyError()
+                return jsonify({
+                    "error": "unauthorized_client"
+                }), 401
 
             del payload["grant_type"]
 
@@ -133,9 +136,6 @@ def __auth_token():
             }), 200
 
         except (binascii.Error, KeyError, UnicodeDecodeError):
-            return jsonify({
-                "error": "invalid_token"
-            }), 401
 
         except jwt.exceptions.ExpiredSignatureError:
             return jsonify({
@@ -168,7 +168,9 @@ def __access_validator():
                 payload = get_token_payload()
 
                 if payload["grant_type"] != "access_token":
-                    raise KeyError()
+                    return jsonify({
+                        "error": "unauthorized_client"
+                    }), 400
 
                 if payload["scope"] not in __secured_endpoint_match or not re.match(__secured_endpoint_match[payload["scope"]], request.path):
                     return jsonify({
@@ -194,7 +196,7 @@ def __access_validator():
 
         if not authorized:
             return jsonify({
-                "error": "access_denied"
+                "error": "unauthorized_client"
             }), 400
 
 
