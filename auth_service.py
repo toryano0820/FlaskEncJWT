@@ -213,11 +213,12 @@ def setup(flask_app, login_func, endpoint_patterns=[]):
     """Integrates this auth plugin into existing Flask instance
 
     Parameters:
-    flask_app (`flask.Flask`): Flask app to integrate this plugin
 
-    login_func (`Callable`): Function where login params are passed, must return `bool`
+    flask_app (`Flask`): Flask app to integrate this plugin
 
-    endpoint_patterns (`str` regex patterns): Patterns for secured endpoint
+    login_func (`callable`): Function where login params are passed, must return `bool`
+
+    endpoint_patterns (`list[str]`): RegEx patterns for secured endpoint
    """
     global __secured_endpoint_match, __auth_func
     __auth_func = login_func
