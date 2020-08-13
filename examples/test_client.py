@@ -11,7 +11,7 @@ while True:
             "grant_type": "password",
             "username": "myusername",
             "password": "mypassword",
-            "scope_demo": "developer"  # for testing only ('client'|'developer')
+            "scope_demo": "developer"  # for testing only ('client'|'developer'), will manually set token scope
         }
     )
     login_data = login_rsp.json()
