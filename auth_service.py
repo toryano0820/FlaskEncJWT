@@ -136,6 +136,9 @@ def __auth_token():
             }), 200
 
         except (binascii.Error, KeyError, UnicodeDecodeError):
+            return jsonify({
+                "error": "invalid_token"
+            }), 401
 
         except jwt.exceptions.ExpiredSignatureError:
             return jsonify({
