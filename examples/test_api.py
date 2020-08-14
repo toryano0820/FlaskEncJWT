@@ -13,6 +13,7 @@ app = Flask(__name__)
 def authenticate(**kwargs):
     print("[DEBUG]", json.dumps(kwargs, indent=2))
     if "scope_demo" in kwargs:
+        kwargs["username"]
         return kwargs["scope_demo"]
 
     return None
