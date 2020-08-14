@@ -94,7 +94,6 @@ def __auth_token():
                 "error_description": f"'{ex.args[0]}' required"
             }), 400
 
-        del payload["password"]
         del payload["grant_type"]
 
         if type(scope) is str:
@@ -222,10 +221,10 @@ def get_token_payload(token=None):
     """Get payload dict from token
 
     Args:
-    token (:obj:`str`, optional): Token string, will use Authorization header token if none given.
+    - token (:obj:`str`, optional): Token string, will use Authorization header token if none given.
 
     Returns:
-    dict: Payload passed on login.
+    - `dict`: Payload passed on login.
     """
 
     if token is None:
@@ -241,10 +240,9 @@ def setup(flask_app, login_func, endpoint_patterns={}):
     """Integrates this auth plugin into existing Flask instance
 
     Args:
-    flask_app (`Flask`): Flask app to integrate this plugin
-    login_func (`callable`): Function where login params are passed, must return scope `str` on success or `None` on login failure
-
-    endpoint_patterns (`dict[str, list[str]]`): Scope dict with list of RegEx patterns for secured endpoint
+    - flask_app (`Flask`): Flask app to integrate this plugin
+    - login_func (`callable`): Function where login params are passed, must return scope `str` on success or `None` on login failure
+    - endpoint_patterns (`dict[str, list[str]]`): Scope dict with list of RegEx patterns for secured endpoints
    """
     global __auth_func
     __auth_func = login_func

@@ -11,11 +11,20 @@ app = Flask(__name__)
 
 
 def authenticate(**kwargs):
-    print("[DEBUG]", json.dumps(kwargs, indent=2))
-    if "scope_demo" in kwargs:
-        kwargs["username"]
-        return kwargs["scope_demo"]
+    """Validate user login
 
+    Args:
+    - **kwargs: holds login credentials/payload from API request
+
+    Returns:
+    - :obj:`str`: return scope as string on login success, return None otherwise
+    """
+
+    print("[DEBUG]", json.dumps(kwargs, indent=2))
+    # kwargs["username"]
+    # kwargs["password"]
+    if "scope_demo" in kwargs:
+        return kwargs["scope_demo"]
     return None
 
 
