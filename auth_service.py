@@ -47,6 +47,7 @@ class AESCipher:
 
 
 TOKEN_TYPE = "Bearer"
+TOKEN_HEADER = base64.urlsafe_b64encode('{"typ":"JWT","alg":"HS256"}'.encode()).decode()
 ACCESS_EXPIRE = int(os.environ.get("_ACCESS_EXPIRE", 1800))  # 1800 seconds = 30 minutes
 REFRESH_EXPIRE = int(os.environ.get("_REFRESH_EXPIRE", 1210000))  # 1210000 seconds  = 14 days
 
@@ -70,7 +71,7 @@ def __generate_token(expire_seconds, **kwargs) -> bytes:
         algorithm="HS256"
     )
 
-    return __aes_cipher.encrypt(token.decode())
+    return __aes_cipher.encrypt(".".join(token.decode().split(".")[1:]))
 
 
 @__app.route("/oauth/token")
@@ -143,7 +144,6 @@ def __auth_token():
             }), 401
 
         except (jwt.exceptions.InvalidTokenError, binascii.Error, KeyError, UnicodeDecodeError, ValueError) as ex:
-            print(type(ex))
             return jsonify({
                 "error": "invalid_token",
                 "error_description": "invalid token"
@@ -239,7 +239,7 @@ def get_token_payload(token=None):
         token = auth_header[len(token_header):]
 
     return jwt.decode(
-        jwt=__aes_cipher.decrypt(token),
+        jwt=TOKEN_HEADER + "." + __aes_cipher.decrypt(token),
         key=__app.secret_key
     )
 
