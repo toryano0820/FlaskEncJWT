@@ -7,7 +7,7 @@ from Crypto import Random
 import base64
 import hashlib
 
-from flask import Flask, Blueprint, request, jsonify
+from flask import Flask, Blueprint, request, jsonify, g
 import jwt
 import binascii
 from datetime import datetime, timedelta
@@ -174,6 +174,7 @@ def __access_validator():
 
                 for scope in payload["scope"]:
                     if scope in __secured_endpoint_match and re.match(__secured_endpoint_match[scope], request.path):
+                        g.payload = payload
                         authorized = True
                         break
                 else:
@@ -219,6 +220,9 @@ def get_token_payload(token=None):
     """
 
     if token is None:
+        if "payload" in g:
+            return g.payload
+
         token = request.headers["Authorization"][len(TOKEN_TYPE) + 1:]
 
     return jwt.decode(
