@@ -142,7 +142,8 @@ def __auth_token():
                 "error_description": "token expired"
             }), 401
 
-        except (jwt.exceptions.InvalidTokenError, binascii.Error, KeyError, UnicodeDecodeError):
+        except (jwt.exceptions.InvalidTokenError, binascii.Error, KeyError, UnicodeDecodeError, ValueError) as ex:
+            print(type(ex))
             return jsonify({
                 "error": "invalid_token",
                 "error_description": "invalid token"
@@ -195,6 +196,12 @@ def __access_validator():
                     "error_description": "invalid token"
                 }), 401
 
+            except ValueError:
+                return jsonify({
+                    "error": "invalid_request",
+                    "error_description": "malformed authorization header"
+                }), 400
+
             except Exception as ex:
                 traceback.print_exc()
                 return jsonify({
@@ -223,7 +230,13 @@ def get_token_payload(token=None):
         if "payload" in g:
             return g.payload
 
-        token = request.headers["Authorization"][len(TOKEN_TYPE) + 1:]
+        auth_header = request.headers["Authorization"]
+        token_header = TOKEN_TYPE + " "
+
+        if auth_header[:len(token_header)] != token_header:
+            raise ValueError()
+
+        token = auth_header[len(token_header):]
 
     return jwt.decode(
         jwt=__aes_cipher.decrypt(token),
