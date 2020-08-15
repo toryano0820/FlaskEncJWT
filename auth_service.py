@@ -161,12 +161,6 @@ def __auth_token():
         }), 400
 
 
-# @__app.route("/oauth/parse_token")
-# def api_token():
-#     payload = get_token_payload(request.values["token"])
-#     return jsonify(payload), 200
-
-
 @__app.before_app_request
 def __access_validator():
     if __secured_endpoint_match and re.match("|".join(__secured_endpoint_match.values()), request.path):
