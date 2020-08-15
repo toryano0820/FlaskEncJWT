@@ -6,7 +6,7 @@ while True:
     print("[INFO] Try logging-in with predefined credentials")
     # login: request access token and refresh token
     login_rsp = requests.get(
-        "http://localhost:8080/oauth/token",
+        "http://127.0.0.1:8080/oauth/token",
         data={
             "grant_type": "password",
             "username": "myusername",
@@ -28,8 +28,8 @@ while True:
         input()
         print("[INFO] Try getting secured data")
         api_rsp = requests.get(
-            "http://localhost:8080/developer",
-            # "http://localhost:8080/api/hello",
+            # "http://127.0.0.1:8080/developer",
+            "http://127.0.0.1:8080/api/hello",
             headers={
                 "Authorization": f"{token_type} {access_token}"
             }
@@ -40,7 +40,7 @@ while True:
             print("[INFO] Try refreshing access_token")
             # request new access token
             refresh_rsp = requests.get(
-                "http://localhost:8080/oauth/token",
+                "http://127.0.0.1:8080/oauth/token",
                 data={
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token
