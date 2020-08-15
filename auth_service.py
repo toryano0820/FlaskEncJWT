@@ -80,7 +80,7 @@ def __auth_token():
     except KeyError as ex:
         return jsonify({
             "error": "invalid_request",
-            "error_description": f"'{ex.args[0]}' required"
+            "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
     if grant_type == "password":
@@ -91,12 +91,12 @@ def __auth_token():
         except KeyError as ex:
             return jsonify({
                 "error": "invalid_request",
-                "error_description": f"'{ex.args[0]}' required"
+                "error_description": f"required: '{ex.args[0]}'"
             }), 400
 
         del payload["grant_type"]
 
-        if type(scope) is str:
+        if scope:
             access_token = __generate_token(ACCESS_EXPIRE, grant_type="access_token", scope=scope, **payload)
             refresh_token = __generate_token(REFRESH_EXPIRE, grant_type="refresh_token", scope=scope, **payload)
 
@@ -110,8 +110,8 @@ def __auth_token():
         else:
             return jsonify({
                 "error": "invalid_client",
-                "error_description": "credentials given are invalid"
-            }), 401
+                "error_description": "authentication failed"
+            }), 400
 
     elif grant_type == "refresh_token":
         try:
@@ -120,14 +120,11 @@ def __auth_token():
             except KeyError as ex:
                 return jsonify({
                     "error": "invalid_request",
-                    "error_description": f"'{ex.args[0]}' required"
+                    "error_description": f"required: '{ex.args[0]}'"
                 }), 400
 
             if payload["grant_type"] != "refresh_token":
-                return jsonify({
-                    "error": "unauthorized_client",
-                    "error_description": f"'{payload['grant_type']}' cannot be used as refresh_token"
-                }), 401
+                raise jwt.exceptions.InvalidTokenError()
 
             del payload["grant_type"]
 
@@ -139,28 +136,28 @@ def __auth_token():
                 "expires_in": ACCESS_EXPIRE
             }), 200
 
-        except (binascii.Error, KeyError, UnicodeDecodeError):
-            return jsonify({
-                "error": "invalid_token",
-                "error_description": "token is invalid"
-            }), 401
-
         except jwt.exceptions.ExpiredSignatureError:
             return jsonify({
                 "error": "token_expired",
-                "error_description": "token has expired"
+                "error_description": "token expired"
+            }), 401
+
+        except (jwt.exceptions.InvalidTokenError, binascii.Error, KeyError, UnicodeDecodeError):
+            return jsonify({
+                "error": "invalid_token",
+                "error_description": "invalid token"
             }), 401
 
         except Exception as ex:
             return jsonify({
-                "error": "unknown_error",
+                "error": "server_error",
                 "error_description": str(ex).split(":")[0]
             }), 500
 
     else:
         return jsonify({
             "error": "unsupported_grant_type",
-            "error_description": "given grant_type is unsupported in this server"
+            "error_description": f"unknown grant_type: '{grant_type}'"
         }), 400
 
 
@@ -179,41 +176,41 @@ def __access_validator():
                 payload = get_token_payload()
 
                 if payload["grant_type"] != "access_token":
-                    return jsonify({
-                        "error": "unauthorized_client",
-                        "error_description": f"'{payload['grant_type']}' cannot be used as refresh_token"
-                    }), 400
+                    raise jwt.exceptions.InvalidTokenError()
 
-                if payload["scope"] not in __secured_endpoint_match or not re.match(__secured_endpoint_match[payload["scope"]], request.path):
+                for scope in payload["scope"]:
+                    if scope in __secured_endpoint_match and re.match(__secured_endpoint_match[scope], request.path):
+                        authorized = True
+                        break
+                else:
                     return jsonify({
-                        "error": "invalid_scope",
-                        "error_description": f"'{payload['scope']}' scope don't have access in this service"
+                        "error": "access_denied",
+                        "error_description": "invalid scope"
                     }), 403
-
-                authorized = True
-            except (binascii.Error, KeyError, UnicodeDecodeError):
-                return jsonify({
-                    "error": "invalid_token",
-                    "error_description": "token is invalid"
-                }), 401
 
             except jwt.exceptions.ExpiredSignatureError:
                 return jsonify({
                     "error": "token_expired",
-                    "error_description": "token has expired"
+                    "error_description": "token expired"
+                }), 401
+
+            except (jwt.exceptions.InvalidTokenError, binascii.Error, KeyError, UnicodeDecodeError):
+                return jsonify({
+                    "error": "invalid_token",
+                    "error_description": "invalid token"
                 }), 401
 
             except Exception as ex:
                 traceback.print_exc()
                 return jsonify({
-                    "error": "unknown_error",
+                    "error": "server_error",
                     "error_description": str(ex).split(":")[0]
                 }), 500
 
         if not authorized:
             return jsonify({
-                "error": "unauthorized_client",
-                "error_description": "access is denied"
+                "error": "access_denied",
+                "error_description": "access denied"
             }), 400
 
 

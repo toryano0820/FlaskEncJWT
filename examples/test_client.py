@@ -11,7 +11,7 @@ while True:
             "grant_type": "password",
             "username": "myusername",
             "password": "mypassword",
-            "scope_demo": "developer"  # for testing only ('client'|'developer'), will manually set token scope
+            "scope_demo": "api dev admin"  # for testing only (api|dev|admin), will manually set token scope
         }
     )
     login_data = login_rsp.json()
@@ -28,8 +28,9 @@ while True:
         input()
         print("[INFO] Try getting secured data")
         api_rsp = requests.get(
-            # "http://127.0.0.1:8080/developer",
-            "http://127.0.0.1:8080/api/hello",
+            # "http://127.0.0.1:8080/admin",
+            # "http://127.0.0.1:8080/devpage",
+            "http://127.0.0.1:8080/api/test",
             headers={
                 "Authorization": f"{token_type} {access_token}"
             }

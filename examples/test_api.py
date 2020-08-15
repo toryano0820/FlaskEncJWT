@@ -17,49 +17,56 @@ def authenticate(**kwargs):
     - **kwargs: holds login credentials/payload from API request
 
     Returns:
-    - :obj:`str`: return scope as string on login success, return None otherwise
+    - `list[str]`: return list of scopes
     """
 
     print("[DEBUG]", json.dumps(kwargs, indent=2))
-    # kwargs["username"]
-    # kwargs["password"]
+    kwargs["username"]
+    kwargs["password"]
     if "scope_demo" in kwargs:
-        return kwargs["scope_demo"]
-    return None
+        return kwargs["scope_demo"].split()
+    return []
 
 
 # initialize auth rules
 auth_service.setup(app, authenticate, {
-    "client": [
+    "api": [
         r"^/api/.*$"
     ],
-    "developer": [
-        r"^/api/.*$",
-        r"^/developer$"
+    "dev": [
+        r"^/devpage$"
+    ],
+    "admin": [
+        r"^/admin$"
     ],
 })
 
 
-@app.route("/hello")
+@app.route("/test")
 def hello():
     return jsonify({
-        "message": "Hello World!"
+        "message": "anyone can access this"
     })
 
 
-@app.route("/developer")
+@app.route("/devpage")
 def developer():
     return jsonify({
-        "message": "Hello Developer!"
+        "message": f"accessible for 'dev' scope, your scopes: {auth_service.get_token_payload()['scope']}"
     })
 
 
-@app.route("/api/hello")
-def api_hello():
-    payload = auth_service.get_token_payload()
-    print(payload)
+@app.route("/api/test")
+def api_test():
     return jsonify({
-        "message": f"Hello `{payload['scope']}`!"
+        "message": f"accessible for 'api' scope, your scopes: {auth_service.get_token_payload()['scope']}"
+    })
+
+
+@app.route("/admin")
+def admin():
+    return jsonify({
+        "message": f"accessible for 'admin' scope, your scopes: {auth_service.get_token_payload()['scope']}"
     })
 
 
