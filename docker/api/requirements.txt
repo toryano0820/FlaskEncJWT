@@ -1,0 +1,4 @@
+pycrypto
+pyjwt
+flask
+pyodbc
