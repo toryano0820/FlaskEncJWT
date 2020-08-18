@@ -22,6 +22,7 @@ class AESCipher:
     '''
     https://stackoverflow.com/a/21928790
     '''
+
     def __init__(self, key):
         self.key = hashlib.sha256(key.encode()).digest()
 
@@ -128,8 +129,10 @@ def oauth_token():
         del payload["grant_type"]
 
         if scope:
-            access_token = generate_token(ACCESS_EXPIRE, grant_type="access_token", scope=scope, **payload)
-            refresh_token = generate_token(REFRESH_EXPIRE, grant_type="refresh_token", scope=scope, **payload)
+            access_token = generate_token(
+                ACCESS_EXPIRE, grant_type="access_token", scope=scope, **payload)
+            refresh_token = generate_token(
+                REFRESH_EXPIRE, grant_type="refresh_token", scope=scope, **payload)
 
             return jsonify({
                 "access_token": access_token,
@@ -159,7 +162,8 @@ def oauth_token():
 
             del payload["grant_type"]
 
-            access_token = generate_token(ACCESS_EXPIRE, grant_type="access_token", **payload)
+            access_token = generate_token(
+                ACCESS_EXPIRE, grant_type="access_token", **payload)
 
             return jsonify({
                 "token_type": TOKEN_TYPE,
@@ -292,6 +296,6 @@ def oauth_token():
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
-        port=8080,
+        port=80,
         debug=True
     )
