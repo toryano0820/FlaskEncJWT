@@ -17,6 +17,8 @@ from urllib.parse import urlencode
 import sqlite3
 from contextlib import contextmanager
 
+from database import DBPool
+
 
 class AESCipher:
     '''
@@ -45,6 +47,25 @@ class AESCipher:
     @staticmethod
     def _unpad(s):
         return s[:-ord(s[len(s) - 1:])]
+
+
+class Member:
+    DBPool.add("db", os.environ["CONNECTION_STRING"], 4)
+
+    @staticmethod
+    def execute(target, *args, error_callback=None):
+        return DBPool.execute("db", target, *args, error_callback=error_callback)
+
+    @staticmethod
+    def register(email, password):
+        def t(cursor):
+            cursor.execute("SELECT * FROM member WHERE email=?", email)
+            if cursor.fetchone():
+                return False, "account_exists"
+
+            cursor.execute()
+
+        return Member.execute(t)
 
 
 TOKEN_TYPE = "Bearer"
@@ -294,8 +315,8 @@ def oauth_token():
 
 
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=80,
-        debug=True
-    )
+    # app.run(
+    #     host="0.0.0.0",
+    #     port=80
+    # )
+    Member.register("kpphtl@gmail.com", "Cr123456")

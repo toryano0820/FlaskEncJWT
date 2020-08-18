@@ -1,5 +1,4 @@
 import pyodbc
-from xyz_parser.utils.parser import mid_of
 import re
 import time
 from enum import Enum
