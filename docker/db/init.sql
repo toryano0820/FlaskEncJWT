@@ -1,22 +1,30 @@
 USE oauth;
 -- SET GLOBAL log_bin_trust_function_creators=1;
 
+CREATE TABLE IF NOT EXISTS `app` (
+    `id` tinytext UNIQUE NOT NULL,
+    `name` tinytext NOT NULL,
+    `description` tinytext NOT NULL,
+    `redirect_uri` text NOT NULL,
+    `date_registered` datetime NOT NULL
+);
+
+
 CREATE TABLE IF NOT EXISTS `member` (
-    `id` int AUTO_INCREMENT PRIMARY KEY,
-    `owner` tinytext NULL,
-    `email` tinytext NOT NULL,
+    `id` tinytext UNIQUE NOT NULL,
+    `email` tinytext NOT NULL UNIQUE,
     `password` tinytext NOT NULL,
     `first_name` tinytext NULL,
     `last_name` tinytext NULL,
     `date_registered` datetime NOT NULL,
     `scope` tinytext NULL
+    `owner` tinytext NULL,
 );
 
 CREATE TABLE IF NOT EXISTS `auth_code` (
     `user_id` int NOT NULL,
     `code` tinytext NOT NULL,
-    `state` tinytext NOT NULL,
-    `date_generated` datetime NOT NULL
+    `signed_state` tinytext NOT NULL
 );
 
 DROP FUNCTION IF EXISTS IS_EMAIL;
@@ -75,10 +83,9 @@ BEGIN
     SET @user_id = -1;
     SET @first_name = NULL;
     SET @last_name = NULL;
-    SET @scope = NULL;
 
-    SELECT `id`, `first_name`, `last_name`, `scope`
-    INTO @user_id, @first_name, @last_name, @scope
+    SELECT `id`, `first_name`, `last_name`
+    INTO @user_id, @first_name, @last_name
     FROM `member`
     WHERE `email` = _email AND `password` = SHA2(CONCAT(_email, _password), 512)
     LIMIT 1;

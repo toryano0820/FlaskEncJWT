@@ -57,15 +57,20 @@ class Member:
         return DBPool.execute("db", target, *args, error_callback=error_callback)
 
     @staticmethod
-    def register(email, password):
-        def t(cursor):
-            cursor.execute("SELECT * FROM member WHERE email=?", email)
-            if cursor.fetchone():
-                return False, "account_exists"
+    def cursor():
+        return DBPool.cursor("db")
 
-            cursor.execute()
+    @staticmethod
+    def register(owner, email, password, first_name=None, last_name=None):
+        with Member.cursor() as cursor:
+            cursor.callproc(
+                "register",
+                owner, email, password, first_name, last_name
+            )
+            for row in cursor.fetcmany():
+                return True, row.id
 
-        return Member.execute(t)
+        return False, -1
 
 
 TOKEN_TYPE = "Bearer"
@@ -217,6 +222,9 @@ def oauth_token():
         }), 400
 
 
+@app.route("/client/register")
+
+
 # @app.before_app_request
 # def access_validator():
 #     if secured_endpoint_match and re.match("|".join(secured_endpoint_match.values()), request.path):
@@ -319,4 +327,4 @@ if __name__ == "__main__":
     #     host="0.0.0.0",
     #     port=80
     # )
-    Member.register("kpphtl@gmail.com", "Cr123456")
+    Member.register("a", "kpphtl@gmail.com", "Cr123456")

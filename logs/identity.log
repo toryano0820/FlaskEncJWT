@@ -1,0 +1,39 @@
+*** Starting uWSGI 2.0.19.1 (64bit) on [Mon Aug 24 03:07:15 2020] ***
+compiled with version: 8.3.0 on 24 August 2020 03:05:51
+os: Linux-5.4.0-42-generic #46-Ubuntu SMP Fri Jul 10 00:24:02 UTC 2020
+nodename: e17fc93b8b1e
+machine: x86_64
+clock source: unix
+detected number of CPU cores: 4
+current working directory: /
+detected binary path: /usr/local/bin/uwsgi
+!!! no internal routing support, rebuild with pcre support !!!
+uWSGI running as root, you can use --uid/--gid/--chroot options
+*** WARNING: you are running uWSGI as root !!! (use the --uid flag) *** 
+chdir() to /workspace
+your memory page size is 4096 bytes
+ *** WARNING: you have enabled harakiri without post buffering. Slow upload could be rejected on post-unbuffered webservers *** 
+detected max file descriptor number: 1048576
+lock engine: pthread robust mutexes
+thunder lock: disabled (you can enable it with --thunder-lock)
+uWSGI http bound on 0.0.0.0:80 fd 6
+uwsgi socket 0 bound to UNIX address /tmp/identity.sock fd 9
+uWSGI running as root, you can use --uid/--gid/--chroot options
+*** WARNING: you are running uWSGI as root !!! (use the --uid flag) *** 
+Python version: 3.6.11 (default, Aug  4 2020, 17:01:52)  [GCC 8.3.0]
+Python main interpreter initialized at 0x558a81f8b0c0
+uWSGI running as root, you can use --uid/--gid/--chroot options
+*** WARNING: you are running uWSGI as root !!! (use the --uid flag) *** 
+python threads support enabled
+your server socket listen backlog is limited to 100 connections
+your mercy for graceful operations on workers is 60 seconds
+mapped 970392 bytes (947 KB) for 50 cores
+*** Operational MODE: preforking+threaded ***
+WSGI app 0 (mountpoint='') ready in 0 seconds on interpreter 0x558a81f8b0c0 pid: 1 (default app)
+uWSGI running as root, you can use --uid/--gid/--chroot options
+*** WARNING: you are running uWSGI as root !!! (use the --uid flag) *** 
+*** uWSGI is running in multiple interpreter mode ***
+spawned uWSGI master process (pid: 1)
+spawned uWSGI worker 1 (pid: 7, cores: 25)
+spawned uWSGI worker 2 (pid: 8, cores: 25)
+spawned uWSGI http 1 (pid: 15)

@@ -2,3 +2,4 @@ pycrypto
 pyjwt
 flask
 pyodbc
+uwsgi

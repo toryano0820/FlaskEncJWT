@@ -32,7 +32,9 @@ services:
       - CONNECTION_STRING=DRIVER={MySQL ODBC 8.0 Driver};SERVER=db;PORT=3306;DATABASE=oauth;UID=oauthuser;PWD=oauthpass
     volumes:
       - ./src:/workspace
-    command: python3 /workspace/auth_service.py
+      - ./logs:/var/log/app
+    # command: python3 /workspace/auth_service.py
+    command: uwsgi /workspace/wsgi.ini
     restart: always
     stdin_open: true
     tty: true

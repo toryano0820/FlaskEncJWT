@@ -25,6 +25,9 @@ class DBConn:
     def is_busy(self):
         return self.__is_busy
 
+    def __set_busy(self, busy):
+        self.__is_busy = busy
+
     def is_connected(self):
         try:
             self.__conn.cursor().execute("SELECT @@VERSION")
@@ -33,11 +36,11 @@ class DBConn:
             self.__conn = pyodbc.connect(self.__connection_string)
             return False
 
-    def execute(self, target, *args, error_callback=None):
-        self.__is_busy = True
+    def execute(self, target, *args, error_callback=None, max_try=3):
+        self.__set_busy(True)
         error = None
 
-        for i in range(3):
+        for i in range(max_try):
             try:
                 cursor = DBConn.Cursor(self.__conn.cursor(), self.__engine)
                 data = target(cursor, *args)
@@ -47,7 +50,7 @@ class DBConn:
 
                 cursor.close()
 
-                self.__is_busy = False
+                self.__set_busy(False)
 
                 return data
             except Exception as ex:
@@ -65,12 +68,15 @@ class DBConn:
 
                 error = ex
 
-        self.__is_busy = False
+        self.__set_busy(False)
+        raise Exception("Error while processing '{}' procedure: {}".format(self.name, error))
 
-        raise Exception("Error while processing '{}' logic: {}".format(self.name, error))
+    def cursor(self):
+        return DBConn.Cursor(self.__conn.cursor(), self.__engine, self.__set_busy)
+
 
     class Cursor:
-        def __init__(self, cursor, db_engine: DBEngine):
+        def __init__(self, cursor, db_engine: DBEngine, busy_setter=None):
             # cursor.fast_executemany = True
             self.__base = cursor
             self.execute = cursor.execute
@@ -86,6 +92,17 @@ class DBConn:
             else:
                 self.callproc = self.__callproc_mysql
                 self.callprocmany = self.__callprocmany_mysql
+            self.__busy_setter = busy_setter
+
+        def __enter__(self):
+            if callable(self.__busy_setter):
+                self.__busy_setter(True)
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+            if callable(self.__busy_setter):
+                self.__busy_setter(False)
 
         def __callproc_mssql(self, stored_proc, *args):
             if "?" in stored_proc:
@@ -137,3 +154,14 @@ class DBPool:
             for conn in DBPool.POOL[name]:
                 if not conn.is_busy() and conn.is_connected():
                     return conn.execute(target, *args, error_callback=error_callback)
+
+    @staticmethod
+    def cursor(name):
+        if name not in DBPool.POOL:
+            raise Exception(
+                "DBPool: Connection to '{}' not initialized.".format(name))
+
+        while True:
+            for conn in DBPool.POOL[name]:
+                if not conn.is_busy() and conn.is_connected():
+                    return conn.cursor()
