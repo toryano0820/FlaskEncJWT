@@ -40,6 +40,14 @@ services:
     stdin_open: true
     tty: true
 
+  email:
+    image: namshi/smtp
+    networks:
+      - default
+    restart: always
+    stdin_open: true
+    tty: true
+
 networks:
   default:
     driver: bridge

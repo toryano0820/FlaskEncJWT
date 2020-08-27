@@ -1,7 +1,4 @@
-from Crypto.Cipher import AES
-from Crypto import Random
 import base64
-import hashlib
 
 from flask import Flask, request, jsonify, render_template, redirect, send_from_directory, url_for, session
 import jwt
@@ -13,41 +10,10 @@ import time
 import re
 import traceback
 from urllib.parse import urlencode
-import pyodbc
-
-import sqlite3
-from contextlib import contextmanager
 
 from database import DBPool
-
-
-class AESCipher:
-    '''
-    https://stackoverflow.com/a/21928790
-    '''
-
-    def __init__(self, key):
-        self.key = hashlib.sha256(key.encode()).digest()
-
-    def encrypt(self, text):
-        text = AESCipher._pad(text)
-        iv = Random.new().read(AES.block_size)
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return base64.b64encode(iv + cipher.encrypt(text.encode())).decode()
-
-    def decrypt(self, enc):
-        enc = base64.b64decode(enc)
-        iv = enc[:AES.block_size]
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return AESCipher._unpad(cipher.decrypt(enc[AES.block_size:])).decode()
-
-    @staticmethod
-    def _pad(s):
-        return s + (AES.block_size - len(s) % AES.block_size) * chr(AES.block_size - len(s) % AES.block_size)
-
-    @staticmethod
-    def _unpad(s):
-        return s[:-ord(s[len(s) - 1:])]
+from encryption import AESCipher
+from mail import send_register_confirm
 
 
 class Member:
@@ -297,11 +263,48 @@ def member_register():
         row = cursor.fetchone()
         if row:
             try:
-                return jsonify({"member_id": row.id}), 200
+                code = row.code
+                send_register_confirm(email, display_name, code)
+                return jsonify({"member_id": row.member_id}), 200
             except AttributeError:
                 return jsonify({"error": row.error}), 409
 
     return jsonify({"error": "unknown_error"}), 500
+
+
+@app.route("/member/confirm")
+def member_confirm():
+    code = request.args["code"]
+
+    with Member.cursor() as cursor:
+        cursor.callproc("validate_code", code)
+        try:
+            for row in cursor:
+                email = row.email
+                member_id = row.member_id
+                display_name = row.display_name
+                break
+        except AttributeError:
+            return jsonify({"error": row.error}), 409
+        except:
+            return jsonify({"error": "unknown_error"}), 500
+
+        cursor.callproc("add_scope", email, "read")
+        try:
+            for row in cursor:
+                scope = row.scope
+                break
+        except AttributeError:
+            return jsonify({"error": row.error}), 409
+        except:
+            return jsonify({"error": "unknown_error"}), 500
+
+        return jsonify({
+            "member_id": member_id,
+            "display_name": display_name,
+            "email": email,
+            "scope": scope
+        }), 200
 
 
 @app.route("/client/register", methods=["POST"])
@@ -327,7 +330,6 @@ def client_register():
                 return jsonify({"error": row.error}), 409
 
     return jsonify({"error": "unknown_error"}), 500
-
 
 
 # @app.before_app_request
