@@ -3,7 +3,7 @@ from Crypto import Random
 import base64
 import hashlib
 
-from flask import Flask, request, jsonify, render_template, redirect, send_from_directory
+from flask import Flask, request, jsonify, render_template, redirect, send_from_directory, url_for, session
 import jwt
 import binascii
 from datetime import datetime, timedelta
@@ -13,6 +13,7 @@ import time
 import re
 import traceback
 from urllib.parse import urlencode
+import pyodbc
 
 import sqlite3
 from contextlib import contextmanager
@@ -86,7 +87,6 @@ auth_func = None
 
 
 def generate_token(expire_seconds, **kwargs) -> bytes:
-    t = time.time()
     now = datetime.utcnow()
     kwargs.update({
         "iat": now,
@@ -101,8 +101,30 @@ def generate_token(expire_seconds, **kwargs) -> bytes:
     return aes_cipher.encrypt(".".join(token.decode().split(".")[1:]))
 
 
-def authenticate(*args, **kwargs):
-    return False
+def authenticate(email, password, payload):
+    with Member.cursor() as cursor:
+        cursor.callproc("authenticate", email, password, payload)
+        row = cursor.fetchone()
+        if row:
+            try:
+                return True, row.code
+            except AttributeError:
+                return False, row.error
+
+        return False, "unknown_error"
+
+
+def authorize(code):
+    with Member.cursor() as cursor:
+        cursor.callproc("validate_code", code)
+        row = cursor.fetchone()
+        if row:
+            try:
+                return True, row.member_id, row.payload
+            except AttributeError:
+                return False, row.error, None
+
+        return False, "unknown_error", None
 
 
 @app.route("/oauth/authorize", methods=["GET", "POST"])
@@ -115,50 +137,85 @@ def oauth_authorize():
         redirect_uri = request.args["redirect_uri"]
         scope = request.args["scope"]
         state = request.args["state"]
-        alert_class = ""
     except KeyError as ex:
         return jsonify({
             "error": "invalid_request",
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    if request.method == "POST":
-        if authenticate():  # TODO: login condition
-            return redirect(redirect_uri)
-        else:
-            alert_class = " alert-validate"
+    email = ""
+    email_alert_class = ""
+    email_validate_message = ""
+    password_alert_class = ""
+    password_validate_message = ""
 
-    return render_template("login.html", params=urlencode(dict(request.args)), alert_class=alert_class)
+    if request.method == "POST":
+        email = request.form["email"]
+        auth_success, auth_data = authenticate(
+            email,
+            request.form["password"],
+            {
+                "client_id": client_id,
+                "scope": scope
+            }
+        )
+        if auth_success:
+            return redirect(redirect_uri + "?" + urlencode({"code": auth_data, "state": state}))
+        else:
+            email_validate_message = ""
+            password_validate_message = ""
+            email_alert_class = " alert-validate"
+            password_alert_class = " alert-validate"
+
+    return render_template(
+        "login.html",
+        params=urlencode(dict(request.args)),
+        email=email,
+        email_alert_class=email_alert_class,
+        email_validate_message=email_validate_message,
+        password_alert_class=password_alert_class,
+        password_validate_message=password_validate_message
+    )
 
 
 @app.route("/oauth/token")
 def oauth_token():
     try:
-        grant_type = request.values["grant_type"]
+        grant_type = request.form["grant_type"]
     except KeyError as ex:
         return jsonify({
             "error": "invalid_request",
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    if grant_type == "password":
-        payload = dict(request.values)
+    if grant_type in ["password", "authorization_code"]:
+        payload = dict(request.args)
 
         try:
-            scope = auth_func(**payload)
+            if grant_type == "password":
+                auth_success, auth_data = authenticate(
+                    request.form["email"],
+                    request.form["password"],
+                    None
+                )
+                payload.update({
+                    "client_id": request.args["client_id"],
+                    "scope": request.args["scope"]
+                })
+            elif grant_type == "authorization_code":
+                auth_success, auth_data, auth_payload = authorize(request.form["code"])
+                payload.update(auth_payload)
         except KeyError as ex:
             return jsonify({
                 "error": "invalid_request",
                 "error_description": f"required: '{ex.args[0]}'"
             }), 400
 
-        del payload["grant_type"]
-
-        if scope:
+        if auth_success:
             access_token = generate_token(
-                ACCESS_EXPIRE, grant_type="access_token", scope=scope, **payload)
+                ACCESS_EXPIRE, grant_type="access_token", **payload)
             refresh_token = generate_token(
-                REFRESH_EXPIRE, grant_type="refresh_token", scope=scope, **payload)
+                REFRESH_EXPIRE, grant_type="refresh_token", **payload)
 
             return jsonify({
                 "access_token": access_token,
@@ -170,7 +227,7 @@ def oauth_token():
         else:
             return jsonify({
                 "error": "invalid_client",
-                "error_description": "authentication failed"
+                "error_description": f"{'authentication' if grant_type == 'password' else 'authorization'} failed: {auth_data}"
             }), 400
 
     elif grant_type == "refresh_token":
@@ -222,7 +279,55 @@ def oauth_token():
         }), 400
 
 
-@app.route("/client/register")
+@app.route("/member/register", methods=["POST"])
+def member_register():
+    try:
+        email = request.values["email"]
+        password = request.values["password"]
+        display_name = None if "display_name" not in request.values else request.values["display_name"]
+        full_name = None if "full_name" not in request.values else request.values["full_name"]
+    except KeyError as ex:
+        return jsonify({
+            "error": "invalid_request",
+            "error_description": f"required: '{ex.args[0]}'"
+        }), 400
+
+    with Member.cursor() as cursor:
+        cursor.callproc("register_member", email, password, display_name, full_name)
+        row = cursor.fetchone()
+        if row:
+            try:
+                return jsonify({"member_id": row.id}), 200
+            except AttributeError:
+                return jsonify({"error": row.error}), 409
+
+    return jsonify({"error": "unknown_error"}), 500
+
+
+@app.route("/client/register", methods=["POST"])
+def client_register():
+    try:
+        client_id = request.values["client_id"]
+        name = request.values["name"]
+        redirect_uri = request.values["redirect_uri"]
+        description = None if "description" not in request.values else request.values["description"]
+    except KeyError as ex:
+        return jsonify({
+            "error": "invalid_request",
+            "error_description": f"required: '{ex.args[0]}'"
+        }), 400
+
+    with Member.cursor() as cursor:
+        cursor.callproc("register_app", client_id, name, description, redirect_uri)
+        row = cursor.fetchone()
+        if row:
+            try:
+                return jsonify({"client_id": row.id}), 200
+            except AttributeError:
+                return jsonify({"error": row.error}), 409
+
+    return jsonify({"error": "unknown_error"}), 500
+
 
 
 # @app.before_app_request
@@ -279,32 +384,32 @@ def oauth_token():
 #             }), 400
 
 
-# def get_token_payload(token=None):
-#     """Get payload dict from token
+def get_token_payload(token=None):
+    """Get payload dict from token
 
-#     Args:
-#     - token (:obj:`str`, optional): Token string, will use Authorization header token if none given.
+    Args:
+    - token (:obj:`str`, optional): Token string, will use Authorization header token if none given.
 
-#     Returns:
-#     - `dict`: Payload passed on login.
-#     """
+    Returns:
+    - `dict`: Payload passed on login.
+    """
 
-#     if token is None:
-#         if "payload" in g:
-#             return g.payload
+    if token is None:
+        if "payload" in g:
+            return g.payload
 
-#         auth_header = request.headers["Authorization"]
-#         token_header = TOKEN_TYPE + " "
+        auth_header = request.headers["Authorization"]
+        token_header = TOKEN_TYPE + " "
 
-#         if auth_header[:len(token_header)] != token_header:
-#             raise ValueError()
+        if auth_header[:len(token_header)] != token_header:
+            raise ValueError()
 
-#         token = auth_header[len(token_header):]
+        token = auth_header[len(token_header):]
 
-#     return jwt.decode(
-#         jwt=TOKEN_HEADER + "." + aes_cipher.decrypt(token),
-#         key=app.secret_key
-#     )
+    return jwt.decode(
+        jwt=TOKEN_HEADER + "." + aes_cipher.decrypt(token),
+        key=app.secret_key
+    )
 
 
 # def setup(flask_app, login_func, endpoint_patterns={}):

@@ -39,14 +39,14 @@
                         N.Era AI
                     </span>
 
-                    <div class="wrap-input100 validate-input{{ alert_class }}" data-validate="Valid email is required: ex@abc.xyz">
-                        <input class="input100" type="text" name="email" placeholder="Email">
+                    <div class="wrap-input100 validate-input{{ email_alert_class }}" data-validate="{{ email_validate_message }}">
+                        <input class="input100" type="text" name="email" placeholder="Email" value="{{ email }}" >
                         <span class="focus-input100-1"></span>
                         <span class="focus-input100-2"></span>
                     </div>
 
-                    <div class="wrap-input100 rs1 validate-input{{ alert_class }}" data-validate="Password is required">
-                        <input class="input100" type="password" name="password" placeholder="Password">
+                    <div class="wrap-input100 rs1 validate-input{{ password_alert_class }}" data-validate="{{ password_validate_message }}">
+                        <input class="input100" type="password" id="password" name="password" placeholder="Password">
                         <span class="focus-input100-1"></span>
                         <span class="focus-input100-2"></span>
                     </div>

@@ -13,6 +13,7 @@ services:
       - MYSQL_ROOT_PASSWORD=oauthrootpass
       - TZ=Asia/Manila
     volumes:
+      - ./sys/mysql:/var/lib/mysql
       - ./docker/db:/docker-entrypoint-initdb.d
     command: --default-authentication-plugin=mysql_native_password
     restart: always

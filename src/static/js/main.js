@@ -7,7 +7,7 @@
     [ Validate ]*/
     var input = $('.validate-input .input100');
 
-    $('.validate-form').on('submit',function(){
+    $('.validate-form').on('submit', function(){
         var check = true;
 
         for(var i=0; i<input.length; i++) {
@@ -52,6 +52,11 @@
         $(thisAlert).removeClass('alert-validate');
     }
 
-
+    $('.input100').on('input', function(){
+        if($(this).attr('type') == 'email' || $(this).attr('name') == 'email')
+            $(this).attr('data-validate', 'Valid email is required: ex@abc.xyz');
+        else
+            $(this).attr('data-validate', 'Password is required');
+    });
 
 })(jQuery);
