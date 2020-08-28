@@ -2,14 +2,14 @@ SET GLOBAL max_connections = 1024;
 
 USE oauth;
 
-DROP TABLE IF EXISTS app;
+DROP TABLE IF EXISTS client;
 DROP TABLE IF EXISTS member;
 DROP TABLE IF EXISTS auth_code;
 
 
-CREATE TABLE IF NOT EXISTS `app` (
-    `id` int PRIMARY KEY AUTO_INCREMENT,
-    `client_id` varchar(64) UNIQUE NOT NULL,
+CREATE TABLE IF NOT EXISTS `client` (
+    `id` varchar(64) UNIQUE NOT NULL,
+    `member_id` int NOT NULL,
     `name` varchar(256) NOT NULL,
     `description` varchar(512) NULL,
     `redirect_uri` varchar(512) NOT NULL,
@@ -26,9 +26,10 @@ CREATE TABLE IF NOT EXISTS `member` (
     `scope` varchar(512) NULL -- NULL|read|write|root
 );
 
-CREATE TABLE IF NOT EXISTS `auth_code` (
+CREATE TABLE IF NOT EXISTS `code` (
     `id` int PRIMARY KEY AUTO_INCREMENT,
-    `member_id` int NOT NULL,
+    `service` varchar(10) NOT NULL,
+    `service_id` int NOT NULL,
     `code` varchar(32) UNIQUE NOT NULL,
     `payload` json NULL,
     `date_created` datetime NOT NULL
@@ -44,21 +45,21 @@ CREATE TABLE IF NOT EXISTS `auth_code` (
 
 DELIMITER //
 
-DROP PROCEDURE IF EXISTS set_auth_code //
-CREATE PROCEDURE set_auth_code(IN _member_id int, OUT _code varchar(32))
+DROP PROCEDURE IF EXISTS set_code //
+CREATE PROCEDURE set_code(IN _service varchar(10), IN _service_id int, OUT _code varchar(32))
 BEGIN
     while_true: LOOP
         SET @code = MD5(RAND());
 
-        IF (SELECT COUNT(*) FROM `auth_code` WHERE `code` = @code LIMIT 1) = 0 THEN
+        IF (SELECT COUNT(*) FROM `code` WHERE `code` = @code LIMIT 1) = 0 THEN
             LEAVE while_true;
         END IF;
     END LOOP;
 
     SELECT @code INTO _code;
 
-    INSERT INTO `auth_code` (`member_id`, `code`, `date_created`)
-    VALUES (@member_id, @code, NOW());
+    INSERT INTO `code` (`service`, `service_id`, `code`, `date_created`)
+    VALUES (_service, _service_id, @code, NOW());
     COMMIT;
 END //
 
@@ -71,7 +72,7 @@ BEGIN
         SET @scope = (SELECT `scope` FROM `member` WHERE `email` = _email LIMIT 1);
 
         IF @scope IS NULL OR INSTR(@scope, _scope) = 0 THEN
-            SET @scope = CONCAT(@scope, ' ', _scope);
+            SET @scope = IF(@scope, CONCAT(@scope, ' ', _scope), _scope);
 
             UPDATE `member`
             SET `scope` = @scope
@@ -95,22 +96,22 @@ BEGIN
 
         SET @member_id = LAST_INSERT_ID();
         SET @code = NULL;
-        CALL set_auth_code(@member_id, @code);
+        CALL set_code('member', @member_id, @code);
         SELECT @code as `code`, @member_id as `member_id`;
     END IF;
 END //
 
-DROP PROCEDURE IF EXISTS register_app //
-CREATE PROCEDURE register_app(_client_id varchar(64), _name varchar(256), _description varchar(512), _redirect_uri varchar(512))
+DROP PROCEDURE IF EXISTS register_client //
+CREATE PROCEDURE register_client(_client_id varchar(64), _name varchar(256), _description varchar(512), _redirect_uri varchar(512))
 BEGIN
-    IF (SELECT COUNT(*) FROM `app` WHERE `client_id` = _client_id LIMIT 1) = 1 THEN
+    IF (SELECT COUNT(*) FROM `client` WHERE `client_id` = _client_id LIMIT 1) = 1 THEN
         SELECT 'client_exists' as `error`;
     ELSE
-        INSERT INTO `app` (`client_id`, `name`, `description`, `redirect_uri`, `date_created`)
+        INSERT INTO `client` (`client_id`, `name`, `description`, `redirect_uri`, `date_created`)
         VALUES (_client_id, _name, _description, _redirect_uri, NOW());
         COMMIT;
 
-        SELECT `id` FROM `app` WHERE `client_id` = _client_id LIMIT 1;
+        SELECT `id` FROM `client` WHERE `client_id` = _client_id LIMIT 1;
     END IF;
 END //
 
@@ -147,7 +148,7 @@ BEGIN
         SELECT 'password_incorrect' as `error`;
     ELSE
         SET @code = NULL;
-        CALL set_auth_code(@member_id, @code);
+        CALL set_code('auth', @member_id, @code);
         SELECT @code as `code`, @member_id as `member_id`;
     END IF;
 END //
@@ -155,30 +156,39 @@ END //
 DROP PROCEDURE IF EXISTS validate_code //
 CREATE PROCEDURE validate_code(_code varchar(32))
 BEGIN
-    SET @member_id = -1;
+    SET @service = NULL;
+    SET @service_id = -1;
     SET @date_created = NULL;
 
-    SELECT `member_id`, `date_created`
-    INTO @member_id, @date_created
-    FROM `auth_code`
+    SELECT `service`, `service_id`, `date_created`
+    INTO @service, @service_id, @date_created
+    FROM `code`
     WHERE `code` = _code
     LIMIT 1;
 
-    IF @member_id = -1 THEN
+    IF @service_id = -1 THEN
         SELECT 'code_not_found' as `error`;
     ELSEIF NOW() > @date_created + INTERVAL 10 MINUTE THEN
         SELECT 'code_expired' as `error`;
     ELSE
-        SELECT `id` as `member_id`, `display_name`, `email` FROM `member` WHERE `id` = @member_id;
+        IF @service = 'auth' THEN
+            SELECT @service_id as `member_id`;
+        ELSEIF @service = 'member' THEN
+            SELECT @service_id as `member_id`, `display_name`, `email` FROM `member` WHERE `id` = @service_id;
+        ELSEIF @service = 'client' THEN
+            SELECT @service_id as `client_id`, `name`, `email` FROM `client` WHERE `id` = @service_id;
+        ELSE
+            SELECT 'unknown_service' as `error`;
+        END IF;
     END IF;
 
-    DELETE FROM `auth_code`
+    DELETE FROM `code`
     WHERE `code` = _code;
     COMMIT;
 END //
 
 DROP PROCEDURE IF EXISTS reset_code //
-CREATE PROCEDURE reset_code(_email varchar(512))
+CREATE PROCEDURE reset_code(_service_email varchar(512))
 BEGIN
     SET @member_id = -1;
 
@@ -192,7 +202,7 @@ BEGIN
         SELECT 'email_not_found' as `error`;
     ELSE
         SET @code = NULL;
-        CALL set_auth_code(@member_id, @code);
+        CALL set_code(@member_id, @code);
         SELECT @code as `code`, @member_id as `member_id`;
     END IF;
 END //

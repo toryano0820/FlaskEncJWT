@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from database import DBPool
 from encryption import AESCipher
-from mail import send_register_confirm
+from mail import send_member_confirm
 
 
 class Member:
@@ -264,7 +264,7 @@ def member_register():
         if row:
             try:
                 code = row.code
-                send_register_confirm(email, display_name, code)
+                send_member_confirm(email, display_name, code)
                 return jsonify({"member_id": row.member_id}), 200
             except AttributeError:
                 return jsonify({"error": row.error}), 409
@@ -321,7 +321,7 @@ def client_register():
         }), 400
 
     with Member.cursor() as cursor:
-        cursor.callproc("register_app", client_id, name, description, redirect_uri)
+        cursor.callproc("register_client", client_id, name, description, redirect_uri)
         row = cursor.fetchone()
         if row:
             try:
