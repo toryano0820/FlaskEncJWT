@@ -1,6 +1,6 @@
 import base64
 
-from flask import Flask, request, jsonify, render_template, redirect, send_from_directory, url_for, session
+from flask import Flask, request, jsonify, render_template, redirect, send_from_directory, url_for, session, g
 import jwt
 import binascii
 from datetime import datetime, timedelta
@@ -67,17 +67,14 @@ def generate_token(expire_seconds, **kwargs) -> bytes:
     return aes_cipher.encrypt(".".join(token.decode().split(".")[1:]))
 
 
-def authenticate(email, password, payload):
+def authenticate(email, password, payload=None):
     with Member.cursor() as cursor:
-        cursor.callproc("authenticate", email, password, payload)
-        row = cursor.fetchone()
-        if row:
+        cursor.callproc("authenticate", email, password, json.dumps(payload))
+        for row in cursor:
             try:
                 return True, row.code
             except AttributeError:
                 return False, row.error
-
-        return False, "unknown_error"
 
 
 def authorize(code):
@@ -86,7 +83,7 @@ def authorize(code):
         row = cursor.fetchone()
         if row:
             try:
-                return True, row.member_id, row.payload
+                return True, row.member_id, json.loads(row.payload)
             except AttributeError:
                 return False, row.error, None
 
@@ -162,12 +159,8 @@ def oauth_token():
                 auth_success, auth_data = authenticate(
                     request.form["email"],
                     request.form["password"],
-                    None
+                    payload
                 )
-                payload.update({
-                    "client_id": request.args["client_id"],
-                    "scope": request.args["scope"]
-                })
             elif grant_type == "authorization_code":
                 auth_success, auth_data, auth_payload = authorize(request.form["code"])
                 payload.update(auth_payload)
@@ -188,7 +181,7 @@ def oauth_token():
                 "token_type": TOKEN_TYPE,
                 "expires_in": ACCESS_EXPIRE,
                 "refresh_token": refresh_token,
-                "scope": scope
+                "scope": payload["scope"]
             }), 200
         else:
             return jsonify({
@@ -272,7 +265,34 @@ def member_register():
     return jsonify({"error": "unknown_error"}), 500
 
 
-@app.route("/member/confirm")
+@app.route("/member/code/resend", methods=["POST"])
+def member_resend():
+    try:
+        email = request.values["email"]
+        password = request.values["password"]
+        display_name = None if "display_name" not in request.values else request.values["display_name"]
+        full_name = None if "full_name" not in request.values else request.values["full_name"]
+    except KeyError as ex:
+        return jsonify({
+            "error": "invalid_request",
+            "error_description": f"required: '{ex.args[0]}'"
+        }), 400
+
+    with Member.cursor() as cursor:
+        cursor.callproc("register_member", email, password, display_name, full_name)
+        row = cursor.fetchone()
+        if row:
+            try:
+                code = row.code
+                send_member_confirm(email, display_name, code)
+                return jsonify({"member_id": row.member_id}), 200
+            except AttributeError:
+                return jsonify({"error": row.error}), 409
+
+    return jsonify({"error": "unknown_error"}), 500
+
+
+@app.route("/member/code/confirm")
 def member_confirm():
     code = request.args["code"]
 
@@ -289,7 +309,7 @@ def member_confirm():
         except:
             return jsonify({"error": "unknown_error"}), 500
 
-        cursor.callproc("add_scope", email, "read")
+        cursor.callproc("set_permission", member_id, "read")
         try:
             for row in cursor:
                 scope = row.scope
