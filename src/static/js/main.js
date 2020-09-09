@@ -11,6 +11,7 @@
         var check = true;
 
         for(var i=0; i<input.length; i++) {
+            resetValidate(input[i]);
             if(validate(input[i]) == false){
                 showValidate(input[i]);
                 check=false;
@@ -23,7 +24,7 @@
 
     $('.validate-form .input100').each(function(){
         $(this).focus(function(){
-           hideValidate(this);
+            hideValidate(this);
         });
     });
 
@@ -50,13 +51,16 @@
         var thisAlert = $(input).parent();
 
         $(thisAlert).removeClass('alert-validate');
+
+        resetValidate(input);
     }
 
-    $('.input100').on('input', function(){
-        if($(this).attr('type') == 'email' || $(this).attr('name') == 'email')
-            $(this).attr('data-validate', 'Valid email is required: ex@abc.xyz');
-        else
-            $(this).attr('data-validate', 'Password is required');
-    });
+    function resetValidate(input) {
+        var thisAlert = $(input).parent();
 
+        if($(input).attr('type') == 'email' || $(input).attr('name') == 'email')
+            $(thisAlert).attr('data-validate', 'Valid email is required: ex@abc.xyz');
+        else
+            $(thisAlert).attr('data-validate', 'Password is required');
+    }
 })(jQuery);

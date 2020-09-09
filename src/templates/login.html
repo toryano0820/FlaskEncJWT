@@ -36,16 +36,19 @@
             <div class="wrap-login100 p-l-55 p-r-55 p-t-65 p-b-50">
                 <form class="login100-form validate-form" action="/oauth/authorize?{{ params }}" method="POST">
                     <span class="login100-form-title p-b-33">
-                        N.Era AI
+                        {{ app_name }}
                     </span>
-
-                    <div class="wrap-input100 validate-input{{ email_alert_class }}" data-validate="{{ email_validate_message }}">
+                    <span class="login100-form-subtitle p-b-33">
+                        by N.Era AI
+                    </span>
+                    <br />
+                    <div class="wrap-input100 validate-input{{ email_alert_class }}" data-validate="{{ email_alert_message }}">
                         <input class="input100" type="text" name="email" placeholder="Email" value="{{ email }}" >
                         <span class="focus-input100-1"></span>
                         <span class="focus-input100-2"></span>
                     </div>
 
-                    <div class="wrap-input100 rs1 validate-input{{ password_alert_class }}" data-validate="{{ password_validate_message }}">
+                    <div class="wrap-input100 rs1 validate-input{{ password_alert_class }}" data-validate="{{ password_alert_message }}">
                         <input class="input100" type="password" id="password" name="password" placeholder="Password">
                         <span class="focus-input100-1"></span>
                         <span class="focus-input100-2"></span>

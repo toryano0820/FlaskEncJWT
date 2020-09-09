@@ -8,8 +8,6 @@ services:
       - 3306:3306
     environment:
       - MYSQL_DATABASE=oauth
-      - MYSQL_USER=oauthuser
-      - MYSQL_PASSWORD=oauthpass
       - MYSQL_ROOT_PASSWORD=oauthrootpass
       - TZ=Asia/Manila
     volumes:
@@ -27,10 +25,10 @@ services:
     ports:
       - 8080:80
     environment:
-      - _APP_KEY=123456
-      - _ACCESS_EXPIRE=10
-      - _REFRESH_EXPIRE=30
-      - CONNECTION_STRING=DRIVER={MySQL ODBC 8.0 Driver};SERVER=db;PORT=3306;DATABASE=oauth;UID=oauthuser;PWD=oauthpass
+      - APP_SECRET=123456
+      - ACCESS_EXPIRE=10
+      - REFRESH_EXPIRE=30
+      - CONNECTION_STRING=DRIVER={MySQL ODBC 8.0 Driver};SERVER=db;PORT=3306;DATABASE=oauth;UID=root;PWD=oauthrootpass
     volumes:
       - ./src:/workspace
       - ./logs:/var/log/app

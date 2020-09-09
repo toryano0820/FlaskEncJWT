@@ -1,32 +1,37 @@
 
-from Crypto.Cipher import AES
+from Crypto.Cipher import AES as AESCipher
 from Crypto import Random
 import base64
 import hashlib
 
-class AESCipher:
+
+class AES:
     '''
     https://stackoverflow.com/a/21928790
     '''
+    bs = AESCipher.block_size
 
-    def __init__(self, key):
-        self.key = hashlib.sha256(key.encode()).digest()
+    @staticmethod
+    def get_key(seed: str):
+        return hashlib.sha256(seed.encode()).digest()
 
-    def encrypt(self, text):
-        text = AESCipher._pad(text)
-        iv = Random.new().read(AES.block_size)
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return base64.b64encode(iv + cipher.encrypt(text.encode())).decode()
+    @staticmethod
+    def encrypt(plain_text, key):
+        plain_text = AES._pad(plain_text)
+        iv = Random.new().read(AES.bs)
+        cipher = AESCipher.new(key, AESCipher.MODE_CBC, iv)
+        return base64.b64encode(iv + cipher.encrypt(plain_text.encode())).decode()
 
-    def decrypt(self, enc):
-        enc = base64.b64decode(enc)
-        iv = enc[:AES.block_size]
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return AESCipher._unpad(cipher.decrypt(enc[AES.block_size:])).decode()
+    @staticmethod
+    def decrypt(cipher_text, key):
+        cipher_text = base64.b64decode(cipher_text)
+        iv = cipher_text[:AES.bs]
+        cipher = AESCipher.new(key, AESCipher.MODE_CBC, iv)
+        return AES._unpad(cipher.decrypt(cipher_text[AES.bs:])).decode()
 
     @staticmethod
     def _pad(s):
-        return s + (AES.block_size - len(s) % AES.block_size) * chr(AES.block_size - len(s) % AES.block_size)
+        return s + (AES.bs - len(s) % AES.bs) * chr(AES.bs - len(s) % AES.bs)
 
     @staticmethod
     def _unpad(s):
