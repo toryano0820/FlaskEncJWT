@@ -1,6 +1,6 @@
 import base64
 
-from flask import Flask, request, jsonify, render_template, redirect, send_from_directory, url_for, session, g
+from flask import Flask, request, jsonify, render_template, redirect, send_from_directory, url_for, g, make_response, session
 import jwt
 import binascii
 from datetime import datetime, timedelta
@@ -11,22 +11,13 @@ import re
 import traceback
 from urllib.parse import urlencode
 
-from database import DBPool
+import database
 from encryption import AES
 import email_handler
 from traceback import print_exc
+from functools import wraps
+import flask
 
-
-class DB:
-    DBPool.add("db", os.environ["CONNECTION_STRING"], 4)
-
-    @staticmethod
-    def execute(target, *args, error_callback=None):
-        return DBPool.execute("db", target, *args, error_callback=error_callback)
-
-    @staticmethod
-    def cursor():
-        return DBPool.cursor("db")
 
 
 TOKEN_TYPE = "Bearer"
@@ -37,13 +28,53 @@ REFRESH_EXPIRE = int(os.environ.get("REFRESH_EXPIRE", 1210000))  # 1210000 secon
 app = Flask(__name__)
 app.secret_key = AES.get_key(os.environ.get("APP_SECRET", "thisismysecretkey"))
 
+db = database.Pool(os.environ["CONNECTION_STRING"])
 
-def generate_token(key, expire_seconds, **kwargs) -> bytes:
-    now = datetime.utcnow()
-    kwargs.update({
-        "iat": now,
-        "exp": now + timedelta(seconds=expire_seconds)
-    })
+
+session = {}
+
+
+def route(*args, **kwargs):
+    def o_dec(fn):
+        @app.route(*args, **kwargs)
+        @wraps(fn)
+        def i_dec(*i_args, **i_kwargs):
+            global session
+            sess_str = request.cookies.get('__session')
+            session.update(json.loads(AES.decrypt(sess_str, app.secret_key)) if sess_str else {})
+            http_rsp = make_response(fn(*i_args, **i_kwargs))
+            http_rsp.set_cookie('__session', AES.encrypt(json.dumps(session), app.secret_key))
+            return http_rsp
+
+        return i_dec
+
+    return o_dec
+
+
+def protect_view(fn):
+    @wraps(fn)
+    def decorator(*args, **kwargs):
+        try:
+            payload = get_token_payload(app.secret_key, AES.decrypt(session.get('token'), app.secret_key))
+            if payload.get('remote_addr') == request.remote_addr:
+                return fn(*args, **kwargs)
+        except Exception:
+            pass
+
+        session.pop('token', None)
+        return redirect(url_for('login'))
+
+    return decorator
+
+
+def generate_token(key, expire_seconds=None, **kwargs) -> bytes:
+    if expire_seconds is not None:
+        now = datetime.utcnow()
+        kwargs.update({
+            "iat": now,
+            "exp": now + timedelta(seconds=expire_seconds)
+        })
+
     token = jwt.encode(
         payload=kwargs,
         key=key,
@@ -54,7 +85,7 @@ def generate_token(key, expire_seconds, **kwargs) -> bytes:
 
 
 def authenticate(email, password, payload=None):
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         cursor.callproc("authenticate", email, password, json.dumps(payload))
         row = cursor.fetchone()
         if row:
@@ -63,9 +94,11 @@ def authenticate(email, password, payload=None):
             except AttributeError:
                 return False, row.error
 
+    return False, None
+
 
 def authorize(code):
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         cursor.callproc("validate_code", code)
         row = cursor.fetchone()
         if row:
@@ -77,7 +110,7 @@ def authorize(code):
         return False, "unknown_error", None
 
 
-@app.route("/oauth/authorize", methods=["GET", "POST"])
+@route("/oauth/authorize", methods=["GET", "POST"])
 def oauth_authorize():
     args = dict(request.args)
     try:
@@ -86,7 +119,6 @@ def oauth_authorize():
             raise ValueError("response_type")
         client_id = args["client_id"]
         redirect_uri = args["redirect_uri"]
-        scope = args["scope"]
         state = args["state"]
     except KeyError as ex:
         return jsonify({
@@ -102,7 +134,7 @@ def oauth_authorize():
 
 
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc('get_client_info', client_id)
             row = cursor.fetchone()
@@ -128,15 +160,14 @@ def oauth_authorize():
 
     if request.method == "POST":
         email = request.form["email"]
+        password = request.form["password"]
         auth_success, auth_data = authenticate(
             email,
-            request.form["password"],
-            {
-                "client_id": client_id,
-                "scope": scope
-            }
+            password
         )
+
         if auth_success:
+            session['token'] = AES.encrypt(generate_token(app.secret_key, remote_addr=request.remote_addr, email=email, password=password), app.secret_key)
             return redirect(redirect_uri + "?" + urlencode({"code": auth_data, "state": state}))
 
         else:
@@ -152,15 +183,27 @@ def oauth_authorize():
                 session['password_alert_class'] = " alert-validate"
                 return redirect(url_for('oauth_authorize') + f'?{urlencode(args)}')
 
-    # elif request.method == "GET":
-    #     access_token = session.get('actk', None)
-    #     refresh_token = session.get('rftk', None)
+    elif request.method == "GET":
+        try:
+            payload = get_token_payload(app.secret_key, AES.decrypt(session.get('token'), app.secret_key))
+            if payload.get('remote_addr') == request.remote_addr:
+                email = payload["email"]
+                password = payload["password"]
+                auth_success, auth_data = authenticate(
+                    email,
+                    password
+                )
+                return redirect(redirect_uri + "?" + urlencode({"code": auth_data, "state": state}))
+        except Exception:
+            pass
 
 
     return render_template(
         "login.html",
+        login_url=url_for('oauth_authorize'),
         params=urlencode(args),
         app_name=app_name,
+        sub_title_display='block',
         email=email,
         email_alert_class=email_alert_class,
         email_alert_message=email_alert_message,
@@ -169,7 +212,7 @@ def oauth_authorize():
     )
 
 
-@app.route("/oauth/token")
+@route("/oauth/token")
 def oauth_token():
     try:
         grant_type = request.form["grant_type"]
@@ -202,7 +245,7 @@ def oauth_token():
             }), 400
 
         if auth_success:
-            with DB.cursor() as cursor:
+            with db.cursor() as cursor:
                 try:
                     cursor.callproc('get_client_info', client_id)
                     row = cursor.fetchone()
@@ -227,8 +270,7 @@ def oauth_token():
                 "access_token": access_token,
                 "token_type": TOKEN_TYPE,
                 "expires_in": ACCESS_EXPIRE,
-                "refresh_token": refresh_token,
-                "scope": payload["scope"]
+                "refresh_token": refresh_token
             }), 200
         else:
             return jsonify({
@@ -286,7 +328,7 @@ def oauth_token():
         }), 400
 
 
-@app.route("/member/register", methods=["POST"])
+@route("/member/register", methods=["POST"])
 def member_register():
     try:
         email = request.values["email"]
@@ -299,7 +341,7 @@ def member_register():
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc("register_member", email, password, display_name, full_name)
             row = cursor.fetchone()
@@ -315,7 +357,7 @@ def member_register():
     return jsonify({"member_id": row.member_id}), 200
 
 
-@app.route("/member/code/confirm")
+@route("/member/code/confirm")
 def member_code_confirm():
     try:
         code = request.args["code"]
@@ -325,7 +367,7 @@ def member_code_confirm():
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc("validate_code", code)
             row = cursor.fetchone()
@@ -351,7 +393,7 @@ def member_code_confirm():
     }), 200
 
 
-@app.route("/member/code/resend", methods=["POST"])
+@route("/member/code/resend", methods=["POST"])
 def member_code_resend():
     try:
         email = request.values["email"]
@@ -361,7 +403,7 @@ def member_code_resend():
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc("get_member_info", email)
             row = cursor.fetchone()
@@ -383,7 +425,7 @@ def member_code_resend():
     return jsonify({"member_id": member_id}), 200
 
 
-@app.route("/client/register", methods=["POST"])
+@route("/client/register", methods=["POST"])
 def client_register():
     try:
         member_email = request.values["member_email"]
@@ -395,7 +437,7 @@ def client_register():
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc("register_client", member_email, name, authorized_hosts)
             row = cursor.fetchone()
@@ -413,7 +455,7 @@ def client_register():
             return jsonify({"error": "unknown_error"}), 500
 
 
-@app.route("/client/code/confirm")
+@route("/client/code/confirm")
 def client_code_confirm():
     try:
         code = request.args["code"]
@@ -423,7 +465,7 @@ def client_code_confirm():
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc("validate_code", code)
             row = cursor.fetchone()
@@ -450,7 +492,7 @@ def client_code_confirm():
     }), 200
 
 
-@app.route("/client/code/resend", methods=["POST"])
+@route("/client/code/resend", methods=["POST"])
 def client_code_resend():
     try:
         client_id = request.values["client_id"]
@@ -460,7 +502,7 @@ def client_code_resend():
             "error_description": f"required: '{ex.args[0]}'"
         }), 400
 
-    with DB.cursor() as cursor:
+    with db.cursor() as cursor:
         try:
             cursor.callproc("get_client_info", client_id)
             row = cursor.fetchone()
@@ -508,3 +550,78 @@ def get_token_payload(key, token=None):
         jwt=TOKEN_HEADER + "." + AES.decrypt(token, key),
         key=key
     )
+
+
+@route('/')
+@protect_view
+def index():
+    return 'Hello', 200
+
+
+@route('/login', methods=['GET', 'POST'])
+def login():
+    args = dict(request.args)
+    next_uri = args.get('next', url_for('index'))
+
+    email = session.get('email', '')
+    email_alert_class = session.get('email_alert_class', '')
+    email_alert_message = session.get('email_alert_message', 'Valid email is required: ex@abc.xyz')
+    password_alert_class = session.get('password_alert_class', '')
+    password_alert_message = session.get('password_alert_message', 'Password is required')
+
+    session.pop('email', None)
+    session.pop('email_alert_class', None)
+    session.pop('email_alert_message', None)
+    session.pop('password_alert_class', None)
+    session.pop('password_alert_message', None)
+
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
+        auth_success, auth_data = authenticate(
+            email,
+            password
+        )
+        if auth_success:
+            session['token'] = AES.encrypt(generate_token(app.secret_key, remote_addr=request.remote_addr, email=email, password=password), app.secret_key)
+            return redirect(next_uri)
+
+        else:
+            if auth_data == "member_not_found":
+                session['email'] = email
+                session['email_alert_message'] = "Email not registered"
+                session['email_alert_class'] = " alert-validate"
+                return redirect(url_for('oauth_authorize') + f'?{urlencode(args)}')
+
+            elif auth_data == "password_incorrect":
+                session['email'] = email
+                session['password_alert_message'] = "Password is incorrect"
+                session['password_alert_class'] = " alert-validate"
+                return redirect(url_for('oauth_authorize') + f'?{urlencode(args)}')
+
+    elif request.method == "GET":
+        try:
+            payload = get_token_payload(app.secret_key, AES.decrypt(session.get('token'), app.secret_key))
+            if payload.get('remote_addr') == request.remote_addr:
+                return redirect(next_uri)
+        except Exception:
+            pass
+
+    return render_template(
+        "login.html",
+        login_url=url_for('login'),
+        params=urlencode(args),
+        app_name='N.Era AI',
+        sub_title_display='none',
+        email=email,
+        email_alert_class=email_alert_class,
+        email_alert_message=email_alert_message,
+        password_alert_class=password_alert_class,
+        password_alert_message=password_alert_message
+    )
+
+
+@route('/logout', methods=['GET', 'POST'])
+def logout():
+    session.pop('token', None)
+    return redirect(url_for('index'))

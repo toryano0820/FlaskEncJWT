@@ -34,11 +34,11 @@
     <div class="limiter">
         <div class="container-login100">
             <div class="wrap-login100 p-l-55 p-r-55 p-t-65 p-b-50">
-                <form class="login100-form validate-form" action="/oauth/authorize?{{ params }}" method="POST">
+                <form class="login100-form validate-form" action="{{ login_url }}?{{ params }}" method="POST">
                     <span class="login100-form-title p-b-33">
                         {{ app_name }}
                     </span>
-                    <span class="login100-form-subtitle p-b-33">
+                    <span class="login100-form-subtitle p-b-33" style="display: {{ sub_title_display }};">
                         by N.Era AI
                     </span>
                     <br />

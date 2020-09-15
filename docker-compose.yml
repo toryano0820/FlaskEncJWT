@@ -26,8 +26,8 @@ services:
       - 8080:80
     environment:
       - APP_SECRET=123456
-      - ACCESS_EXPIRE=10
-      - REFRESH_EXPIRE=30
+      - ACCESS_EXPIRE=30
+      - REFRESH_EXPIRE=60
       - CONNECTION_STRING=DRIVER={MySQL ODBC 8.0 Driver};SERVER=db;PORT=3306;DATABASE=oauth;UID=root;PWD=oauthrootpass
     volumes:
       - ./src:/workspace
